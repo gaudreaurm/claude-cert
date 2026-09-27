@@ -1,0 +1,9 @@
+{
+  "name": "Claude Architect Exam Prep",
+  "short_name": "Architect Prep",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#1f1e1d",
+  "theme_color": "#1f1e1d",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+}
