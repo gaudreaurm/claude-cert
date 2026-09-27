@@ -11,7 +11,7 @@ A static web app (no build step, no dependencies) for studying for the Claude Ce
 - **Flashcards from results** — one tap turns missed questions into a deck; Leitner boxes (Again → box 1, Got it → next box, box 5 = mastered). Also build decks from all missed questions or a whole domain.
 - **Custom quizzes** — filter by domain, source quiz, never-answered, missed last time, or below 70%.
 - **Add quizzes without code** — *Manage → Add a quiz* has a copy-ready prompt for Claude; paste the JSON it returns.
-- **Backup & sync** — export/import progress to move it between devices (storage is per-browser).
+- **Backup & sync** — download, copy, or paste a backup to move it between devices (storage is per-browser).
 - Keyboard: A–D / 1–4 answer, ← → navigate; flashcards: Space flip, 1 again, 2 got it.
 
 ## Run it

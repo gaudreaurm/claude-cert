@@ -3,7 +3,7 @@
   "short_name": "Architect Prep",
   "start_url": "./",
   "display": "standalone",
-  "background_color": "#1f1e1d",
-  "theme_color": "#1f1e1d",
+  "background_color": "#16202b",
+  "theme_color": "#16202b",
   "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
 }

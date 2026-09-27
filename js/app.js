@@ -139,6 +139,26 @@
   }
   const go = (hash) => { location.hash = hash; };
 
+  // In-page confirmation dialog; sandboxed hosts block the native one.
+  function ask(message, okLabel = "Confirm", danger = false) {
+    return new Promise((resolve) => {
+      const wrap = document.createElement("div");
+      wrap.className = "modal";
+      wrap.innerHTML = `<div class="modal-box" role="alertdialog" aria-modal="true" aria-labelledby="ask-msg">
+        <p id="ask-msg">${esc(message)}</p>
+        <div class="row" style="justify-content:flex-end"><button id="ask-no">Cancel</button>
+        <button id="ask-yes" class="${danger ? "danger-fill" : "primary"}">${esc(okLabel)}</button></div></div>`;
+      const done = (v) => { wrap.remove(); document.removeEventListener("keydown", key, true); resolve(v); };
+      const key = (e) => { if (e.key === "Escape") { e.stopPropagation(); done(false); } };
+      wrap.addEventListener("click", (e) => { if (e.target === wrap) done(false); });
+      document.body.appendChild(wrap);
+      $("#ask-no", wrap).onclick = () => done(false);
+      $("#ask-yes", wrap).onclick = () => done(true);
+      document.addEventListener("keydown", key, true);
+      $("#ask-yes", wrap).focus();
+    });
+  }
+
   /* ---------- attempts ---------- */
 
   // Picks the display order of each question's options. The slot that holds the
@@ -306,14 +326,14 @@
 
     app.addEventListener("click", homeClick);
     cleanup = () => app.removeEventListener("click", homeClick);
-    function homeClick(e) {
+    async function homeClick(e) {
       const t = e.target.closest("button");
       if (!t) return;
       if (t.dataset.start) {
         const quiz = quizzes.get(t.dataset.start);
         startAttempt({ title: quiz.title, quizId: quiz.id, mode: t.dataset.mode, refs: quiz.questions.map((q) => ref(quiz.id, q.id)) });
       } else if (t.dataset.discard) {
-        if (confirm("Discard this in-progress attempt?")) { delete state.attempts[t.dataset.discard]; save(); route(); }
+        if (await ask("Discard this in-progress attempt?", "Discard", true)) { delete state.attempts[t.dataset.discard]; save(); route(); }
       } else if ("mock" in t.dataset) {
         startAttempt({ title: "Full mock exam", mode: "exam", refs: all, shuffleQuestions: true });
       } else if ("weak" in t.dataset) {
@@ -384,9 +404,9 @@
       viewQuiz(id);
       if (practice) $(".explain")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     };
-    const finish = () => {
+    const finish = async () => {
       const missing = a.refs.length - Object.keys(a.answers).length;
-      if (missing && !confirm(`${missing} question${missing > 1 ? "s are" : " is"} unanswered and will count as wrong. Finish anyway?`)) return;
+      if (missing && !(await ask(`${missing} question${missing > 1 ? "s are" : " is"} unanswered and will count as wrong. Finish anyway?`, "Finish"))) return;
       finishAttempt(a);
     };
     $$(".option").forEach((b) => (b.onclick = () => choose(Number(b.dataset.orig))));
@@ -559,8 +579,8 @@
       const d = $("#dom").value;
       createDeck(domainName(d), [...qIndex.entries()].filter(([, x]) => x.q.domain === d).map(([r]) => r));
     };
-    $$("[data-del]").forEach((b) => (b.onclick = () => {
-      if (!confirm("Delete this deck?")) return;
+    $$("[data-del]").forEach((b) => (b.onclick = async () => {
+      if (!(await ask("Delete this deck?", "Delete", true))) return;
       delete state.decks[b.dataset.del];
       for (const a of Object.values(state.attempts)) if (a.deckId === b.dataset.del) delete a.deckId;
       save();
@@ -586,7 +606,7 @@
           <div class="row"><button id="again-all" class="primary">Study all cards again</button>
           <button id="reset">Reset deck to box 1</button><a class="btn" href="#/cards">All decks</a></div></div>`);
         $("#again-all").onclick = () => { queue = shuffle(cards); done = 0; show(); };
-        $("#reset").onclick = () => { if (confirm("Move every card back to box 1?")) { cards.forEach((c) => (c.box = 1)); save(); queue = shuffle(cards); done = 0; show(); } };
+        $("#reset").onclick = async () => { if (await ask("Move every card back to box 1?", "Reset", true)) { cards.forEach((c) => (c.box = 1)); save(); queue = shuffle(cards); done = 0; show(); } };
         return;
       }
       flipped = false;
@@ -700,8 +720,12 @@ Rules:
       <div class="card stack">
         <h2>Backup &amp; sync</h2>
         <p class="muted small">Progress is stored in this browser only. To move it between phone and computer, export here and import on the other device.</p>
-        <div class="row"><button id="export">Export progress</button><label class="btn">Import progress<input type="file" id="restore" accept=".json,application/json" hidden></label>
-          <button id="reset" class="danger">Reset everything</button></div>
+        <div class="row"><button id="export">Download backup</button><button id="copy-backup">Copy backup</button>
+          <label class="btn">Restore from file<input type="file" id="restore" accept=".json,application/json" hidden></label></div>
+        <details><summary>Restore by pasting</summary>
+          <textarea id="paste-backup" aria-label="Backup JSON" placeholder="Paste a copied backup here"></textarea>
+          <button id="restore-paste">Restore</button></details>
+        <div class="row"><button id="reset" class="danger">Reset everything</button></div>
       </div>
     `);
 
@@ -715,14 +739,14 @@ Rules:
     $("#copy-prompt").onclick = () => copy(promptText());
 
     const msg = (html, ok) => { $("#import-msg").innerHTML = `<div class="explain ${ok ? "good" : "bad"}">${html}</div>`; };
-    const importText = (text) => {
+    const importText = async (text) => {
       let raw;
       try { raw = JSON.parse(text.trim().replace(/^```(?:json)?\s*|\s*```$/g, "")); }
       catch (e) { return msg(`Not valid JSON: ${esc(e.message)}`, false); }
       const { quiz, errors, warnings } = normalizeQuiz(raw);
       if (!quiz) return msg(`<strong>Couldn't add quiz:</strong><ul>${errors.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`, false);
       if (quizzes.has(quiz.id) && quizzes.get(quiz.id).source === "built-in") quiz.id += "-custom";
-      if (state.imported[quiz.id] && !confirm(`Replace the existing quiz "${state.imported[quiz.id].title}"?`)) return;
+      if (state.imported[quiz.id] && !(await ask(`Replace the existing quiz "${state.imported[quiz.id].title}"?`, "Replace"))) return;
       removeQuiz(quiz.id);
       state.imported[quiz.id] = quiz;
       addQuiz(quiz, "imported");
@@ -732,8 +756,8 @@ Rules:
     };
     $("#import").onclick = () => importText($("#json").value);
     $("#file").onchange = async (e) => { const f = e.target.files[0]; if (f) importText(await f.text()); };
-    $$("[data-remove]").forEach((b) => (b.onclick = () => {
-      if (!confirm("Remove this quiz? Its questions disappear from decks and history.")) return;
+    $$("[data-remove]").forEach((b) => (b.onclick = async () => {
+      if (!(await ask("Remove this quiz? Its questions disappear from decks and history.", "Remove", true))) return;
       delete state.imported[b.dataset.remove];
       removeQuiz(b.dataset.remove);
       save();
@@ -744,14 +768,16 @@ Rules:
       download(`${q.id}.json`, JSON.stringify(q, null, 2));
     }));
 
-    $("#export").onclick = () => download(`architect-prep-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify({ app: STORE_KEY, exported: new Date().toISOString(), state }, null, 2));
-    $("#restore").onchange = async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
+    const backup = () => JSON.stringify({ app: STORE_KEY, exported: new Date().toISOString(), state });
+    $("#export").onclick = () => download(`architect-prep-backup-${new Date().toISOString().slice(0, 10)}.json`, backup());
+    $("#copy-backup").onclick = () => copy(backup());
+    $("#restore").onchange = async (e) => { const f = e.target.files[0]; if (f) restore(await f.text()); };
+    $("#restore-paste").onclick = () => restore($("#paste-backup").value);
+    const restore = async (text) => {
       try {
-        const data = JSON.parse(await f.text());
-        if (data.app !== STORE_KEY || !data.state) throw new Error("Not a backup from this app");
-        if (!confirm("Replace all progress on this device with the backup?")) return;
+        const data = JSON.parse(text);
+        if (data.app !== STORE_KEY || !data.state) throw new Error("that isn't a backup from this app");
+        if (!(await ask("Replace all progress on this device with the backup?", "Replace", true))) return;
         for (const id of Object.keys(state.imported)) removeQuiz(id);
         state = { ...defaults(), ...data.state };
         loadImported();
@@ -760,8 +786,8 @@ Rules:
         viewManage();
       } catch (err) { toast(`Import failed: ${err.message}`); }
     };
-    $("#reset").onclick = () => {
-      if (!confirm("Delete all progress, decks and added quizzes on this device?")) return;
+    $("#reset").onclick = async () => {
+      if (!(await ask("Delete all progress, decks and added quizzes on this device?", "Delete everything", true))) return;
       for (const id of Object.keys(state.imported)) removeQuiz(id);
       state = defaults();
       save();
